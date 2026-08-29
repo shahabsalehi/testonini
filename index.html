@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=1024">
+  <title>Exam Practice</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <!-- Home -->
+  <section id="home-screen" class="screen active">
+    <main class="landing">
+      <header class="landing-nav">
+        <span class="brand">Exam Practice</span>
+        <span class="brand-sub">local exam simulator</span>
+      </header>
+
+      <section class="hero">
+        <h1>Practice exams like the real thing.</h1>
+        <p class="hero-sub">Drop in an exam PDF. Get a timed, split-screen test with flagging, palette and auto-marking.
+          Runs entirely on your machine.</p>
+      </section>
+
+      <div id="resume-box" class="resume-box" style="display:none">
+        <span id="stored-test-name"></span>
+        <div>
+          <button id="btn-continue" class="btn btn-primary" style="display:none">Continue</button>
+          <button id="btn-restart" class="btn" style="display:none">Restart</button>
+        </div>
+      </div>
+
+      <section class="upload-card">
+        <div class="upload-head">
+          <h2>Add a document</h2>
+          <span class="hint">PDF, Word, RTF, EPUB, CSV</span>
+        </div>
+        <div class="drop-zone" id="drop-zone">
+          <label class="dz-inner" for="file-pdf">
+            <span class="dz-icon">↑</span>
+            <span class="dz-label">Click to upload or drag and drop</span>
+            <span class="muted">Text PDFs convert instantly. Scans get OCR'd locally (~20s).</span>
+          </label>
+          <input id="file-pdf" type="file" accept=".pdf,.docx,.doc,.rtf,.odt,.epub,.csv,.xlsx" hidden>
+        </div>
+        <div id="intake-status" class="intake-status" style="display:none"></div>
+      </section>
+
+      <section class="build-section">
+        <div class="build-head">
+          <h2>Build the test</h2>
+          <span class="hint">pick one</span>
+        </div>
+        <div class="paths">
+          <div class="path-card" id="path-auto">
+            <div class="pc-title">Instant</div>
+            <p id="auto-desc">For text-based PDFs questions are extracted automatically. No setup.</p>
+          </div>
+          <div class="path-card path-recommended" id="path-ai">
+            <div class="pc-title">Ask your AI <span class="badge">recommended</span></div>
+            <p>Your ChatGPT / Claude / Codex reads the PDF and writes the test through the local MCP
+               endpoint. Copy the connection details into it:</p>
+            <div class="copy-row">
+              <code id="mcp-url">http://localhost:5874/mcp</code>
+              <button class="btn btn-ghost btn-sm" id="btn-copy-mcp" type="button">Copy</button>
+            </div>
+            <div class="copy-row" style="align-items:stretch">
+              <textarea id="mcp-prompt" rows="7" readonly style="flex:1">Use the MCP server at http://localhost:5874/mcp (name: testonini).
+Tools: list_tests, get_test, save_test, validate_test, list_pdfs, parse_pdf, prepare_test_from_pdf.
+Task: call list_pdfs, pick the file I name, then call parse_pdf with that file name.
+If it returns markdown text, build the test from that. If it returns status scanned-ocr, use the
+attached OCR text but double-check against the rendered pages at the servesAt URL.
+Write every question into ONE test JSON matching the schema from prepare_test_from_pdf.
+If the PDF has no answer key, omit all answers. Then call save_test with file &lt;pdf-name&gt;.json.
+Report the saved file name back to me.</textarea>
+              <button class="btn btn-ghost btn-sm" id="btn-copy-prompt" type="button">Copy</button>
+            </div>
+          </div>
+          <div class="path-card" id="path-manual">
+            <div class="pc-title">JSON import</div>
+            <p>Have a test JSON already? The built-in validator checks it before the exam starts.</p>
+            <label class="btn btn-ghost">Choose file… <input id="file-import" type="file" accept=".json,application/json" hidden></label>
+            <details class="schema-hint">
+              <summary>Schema</summary>
+              <pre>{ "title": "My test", "timeLimitSeconds": 1200,
+  "questions": [
+    { "id": "q1", "number": 1, "type": "single_choice",
+      "prompt": "…", "options": [{"id":"A","text":"…"},…],
+      "correctAnswer": "A" },
+    { "type": "text_input", "number": 2, "prompt": "…",
+      "acceptedAnswers": ["one word", "another"] },
+    { "type": "long_text", "number": 3, "prompt": "essay…",
+      "minWords": 150 } ] }</pre>
+              <p class="muted">Types: single_choice, multiple_choice, true_false (T/F/N),
+                 text_input, matching, long_text. Omit all correctAnswer fields
+                 for manual-marking mode.</p>
+            </details>
+          </div>
+        </div>
+      </section>
+      <p id="home-error" class="error-text"></p>
+    </main>
+  </section>
+
+  <!-- Exam shell -->
+  <section id="exam-screen" class="screen">
+    <div class="exam-shell">
+      <header class="exam-header">
+        <span class="exam-title" id="exam-title"></span>
+        <span class="timer-chip" id="timer">–:––</span>
+        <button id="btn-finish" class="btn btn-primary">Review &amp; finish</button>
+      </header>
+      <div class="exam-body">
+        <div class="split-pane">
+          <div class="pane-pdf" id="pane-pdf"><div id="pdfViewer"></div></div>
+          <div class="pane-questions" id="pane-questions"><div id="question-box"></div></div>
+        </div>
+      </div>
+      <footer class="exam-footer">
+        <div class="question-palette" id="question-palette"></div>
+        <span class="spacer"></span>
+        <button id="btn-prev" class="btn btn-ghost">◀ Previous</button>
+        <button id="btn-flag" class="btn btn-ghost">⚑ Flag</button>
+        <button id="btn-next" class="btn btn-primary">Next ▶</button>
+      </footer>
+    </div>
+  </section>
+
+  <!-- Review before submit -->
+  <section id="review-screen" class="screen">
+    <div class="review-summary">
+      <h2>Review</h2>
+      <div class="summary-grid">
+        <div>Answered: <strong id="review-answered">0</strong></div>
+        <div>Unanswered: <strong id="review-unanswered">0</strong></div>
+        <div>Flagged: <strong id="review-flagged">0</strong></div>
+      </div>
+      <button id="btn-back-to-exam" class="btn btn-ghost">◀ Back to test</button>
+      <button id="btn-submit" class="btn btn-primary">Submit for marking</button>
+    </div>
+  </section>
+
+  <!-- Results -->
+  <section id="results-screen" class="screen">
+    <div class="results-panel">
+      <h2>Results</h2>
+      <p class="score-line" id="results-score"></p>
+      <div id="results-list"></div>
+      <div id="results-panel-actions" style="margin-top:1rem"></div>
+      <button id="btn-review-results" class="btn btn-primary" style="margin-top:1rem">Home</button>
+    </div>
+  </section>
+
+  <script>
+    function bindCopy(btnId, elId) {
+      document.getElementById(btnId).addEventListener('click', () => {
+        const el = document.getElementById(elId);
+        const text = el.value !== undefined ? el.value : el.textContent;
+        const done = () => {
+          const b = document.getElementById(btnId);
+          b.textContent = 'Copied ✓';
+          setTimeout(() => { b.textContent = 'Copy'; }, 1500);
+        };
+        const fallback = () => {
+          const ta = document.createElement('textarea');
+          ta.value = text;
+          document.body.appendChild(ta);
+          ta.select();
+          try { document.execCommand('copy'); done(); } catch (e) { window.prompt('Copy manually:', text); }
+          ta.remove();
+        };
+        if (navigator.clipboard && window.isSecureContext) navigator.clipboard.writeText(text).then(done).catch(fallback);
+        else fallback();
+      });
+    }
+    bindCopy('btn-copy-mcp', 'mcp-url');
+    bindCopy('btn-copy-prompt', 'mcp-prompt');
+  </script>
+  <script type="module" src="app.js"></script>
+</body>
+</html>

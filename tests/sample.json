@@ -1,0 +1,116 @@
+{
+  "title": "Sample Practice Test",
+  "sourcePdf": "sample-passage.pdf",
+  "timeLimitSeconds": 1200,
+  "modules": [
+    {
+      "name": "Reading",
+      "sections": [
+        {
+          "name": "Passage 1",
+          "instruction": "Questions 1-6. Read the passage and answer the questions below.",
+          "group": {
+            "id": "g1",
+            "instructions": "Choose the correct answer for each question."
+          }
+        }
+      ]
+    }
+  ],
+  "questions": [
+    {
+      "id": "q1",
+      "number": 1,
+      "type": "single_choice",
+      "instruction": "Choose the correct answer.",
+      "prompt": "What is the main idea of the passage?",
+      "options": [
+        { "id": "A", "text": "Urban growth is always harmful" },
+        { "id": "B", "text": "Cities can grow without losing green space" },
+        { "id": "C", "text": "Parks are too expensive to maintain" },
+        { "id": "D", "text": "Population decline is inevitable" }
+      ],
+      "correctAnswer": "B",
+      "points": 1
+    },
+    {
+      "id": "q2",
+      "number": 2,
+      "type": "single_choice",
+      "prompt": "According to the passage, what fraction of land is protected in Verdan city?",
+      "options": [
+        { "id": "A", "text": "One third" },
+        { "id": "B", "text": "One quarter" },
+        { "id": "C", "text": "Half" },
+        { "id": "D", "text": "Two thirds" }
+      ],
+      "correctAnswer": "A",
+      "points": 1
+    },
+    {
+      "id": "q3",
+      "number": 3,
+      "type": "multiple_choice",
+      "instruction": "Choose TWO answers.",
+      "prompt": "Which TWO benefits of green belts are mentioned?",
+      "options": [
+        { "id": "A", "text": "Reduced air pollution" },
+        { "id": "B", "text": "Lower housing prices" },
+        { "id": "C", "text": "Improved public health" },
+        { "id": "D", "text": "Higher tourist revenue" },
+        { "id": "E", "text": "Faster transport times" }
+      ],
+      "correctAnswer": ["A", "C"],
+      "points": 1
+    },
+    {
+      "id": "q4",
+      "number": 4,
+      "type": "true_false",
+      "prompt": "Verdan was the first city to adopt a green belt.",
+      "options": [
+        { "id": "T", "text": "True" },
+        { "id": "F", "text": "False" },
+        { "id": "N", "text": "Not Given" }
+      ],
+      "correctAnswer": "F",
+      "points": 1
+    },
+    {
+      "id": "q5",
+      "number": 5,
+      "type": "text_input",
+      "prompt": "The green belt model spread to over ______ cities worldwide.",
+      "acceptedAnswers": ["120", "one hundred and twenty", "one hundred twenty"],
+      "points": 1
+    },
+    {
+      "id": "q6",
+      "number": 6,
+      "type": "matching",
+      "instruction": "Match each person with their opinion.",
+      "prompt": "Opinions",
+      "matchOptions": [
+        { "id": "A", "text": "Green belts raise housing costs" },
+        { "id": "B", "text": "Green belts improve wellbeing" },
+        { "id": "C", "text": "Green belts are outdated" }
+      ],
+      "prompts": [
+        { "id": "1", "text": "Dr Elena Marsh", "correctAnswer": "B" },
+        { "id": "2", "text": "Councillor Igwe", "correctAnswer": "A" },
+        { "id": "3", "text": "Prof Tanaka", "correctAnswer": "C" }
+      ],
+      "points": 1
+    },
+    {
+      "id": "q7",
+      "number": 7,
+      "type": "long_text",
+      "instruction": "Write at least 150 words.",
+      "prompt": "Should cities prioritise parks or housing? Discuss both views.",
+      "minWords": 150,
+      "maxWords": 300,
+      "points": 0
+    }
+  ]
+}
