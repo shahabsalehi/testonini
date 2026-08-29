@@ -41,8 +41,13 @@ export async function renderPdf(container, url) {
       await page.render({ canvas, canvasContext: canvas.getContext('2d'), viewport }).promise;
     }
   } catch (e) {
+    // Show only the relative path, never an absolute origin (could leak host URLs in screenshots).
+    const scrub = s => String(s || '').replace(/^https?:\/\/[^/\s]+/ig, '')
+                                .replace(/^https?:\/\/[^/\s"']+\.["']/ig, '"').replace(/\s+/g, ' ').trim();
+    const rel = scrub(url);
+    const msg = scrub(e && e.message || e);
     container.innerHTML = '<div class="pdf-toolbar">Source document</div>' +
-      '<p class="error-text">Could not load the PDF (' + (e && e.message || e) + '). ' +
+      '<p class="error-text">Could not load the PDF (missing file "' + rel + '"). ' +
       'The exam can still be taken without it.</p>';
   }
 }

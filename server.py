@@ -17,7 +17,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 ROOT = os.path.dirname(sys.executable) if getattr(sys, "frozen", False) else os.path.dirname(os.path.abspath(__file__))
 TESTS = os.path.join(ROOT, "tests")
 PDFS = os.path.join(ROOT, "pdfs")
-HOST, PORT = "0.0.0.0", 5874
+HOST, PORT = "127.0.0.1", 5874  # loopback only; 0.0.0.0 would expose the app + MCP to the network
 
 # ---------- validator: mirror of app.js validateTest ----------
 def validate_test(t):
