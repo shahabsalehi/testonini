@@ -1,0 +1,69 @@
+name: build
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            artifact: TestPractice-linux-x64
+            pip_flags: ""
+          - os: windows-latest
+            artifact: TestPractice-windows-x64
+            pip_flags: ""
+          - os: macos-13        # last Intel runner; fine for Intel + can build universal2 if SDK allows
+            artifact: TestPractice-macos-x64
+            pip_flags: ""
+          - os: macos-14        # Apple Silicon; a universal2 build here covers Intel+M1+
+            artifact: TestPractice-macos-arm64
+            pip_flags: ""
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install build deps (isolated to runner)
+        run: |
+          python -m pip install --upgrade pip
+          pip install pyinstaller reportlab firecrawl-anydoc pymupdf
+      - name: Build (linux/macos)
+        if: runner.os != 'Windows'
+        run: |
+          pyinstaller --onefile --noconsole --name TestPractice \
+            --add-data 'index.html:.' --add-data 'style.css:.' --add-data 'app.js:.' --add-data 'pdf.js:.' \
+            --hidden-import launch_reportlab_marker --hidden-import anydoc \
+            --exclude-module cryptography --exclude-module botocore --exclude-module boto3 \
+            --exclude-module numpy --exclude-module pandas --exclude-module fitz \
+            --exclude-module torch --exclude-module tkinter \
+            launch.py
+          cp index.html style.css app.js pdf.js dist/
+      - name: Build (windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          pyinstaller --onefile --noconsole --name TestPractice `
+            --add-data 'index.html;.' --add-data 'style.css;.' --add-data 'app.js;.' --add-data 'pdf.js;.' `
+            --hidden-import launch_reportlab_marker --hidden-import anydoc `
+            --exclude-module cryptography --exclude-module botocore `
+            --exclude-module numpy --exclude-module pandas --exclude-module tkinter `
+            launch.py
+          Copy-Item index.html, style.css, app.js, pdf.js dist\
+      - name: Smoke test (linux/windows)
+        if: runner.os == 'Linux'
+        run: |
+          cd dist && timeout 15 ./TestPractice > /dev/null 2>&1 &
+          sleep 8
+          curl -f http://localhost:5874/healthz
+          curl -f http://localhost:5874/index.html -o /dev/null
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: |
+            dist/TestPractice*
