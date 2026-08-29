@@ -7,3 +7,4 @@ pdfs/
 tests/*.json
 !tests/sample.json
 release/deepsec-report.json
+release/deepsec-*.json
