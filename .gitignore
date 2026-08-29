@@ -1,0 +1,8 @@
+build/
+dist/
+__pycache__/
+*.zip
+*.pdf
+pdfs/
+tests/*.json
+!tests/sample.json
