@@ -68,9 +68,13 @@ jobs:
         if: runner.os == 'macOS'
         run: codesign --force --deep --sign - dist/TestPractice
       - name: SHA-256 checksums
-        if: runner.os != 'Windows'
+        if: runner.os == 'Linux'
         run: |
           cd dist && sha256sum TestPractice > TestPractice.sha256
+      - name: SHA-256 checksums
+        if: runner.os == 'macOS'
+        run: |
+          cd dist && shasum -a 256 TestPractice > TestPractice.sha256
       - name: SHA-256 checksums
         if: runner.os == 'Windows'
         shell: pwsh
