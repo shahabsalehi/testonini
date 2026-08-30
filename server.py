@@ -569,22 +569,32 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def _make_server():
-    """Bind loopback on both stacks when possible; return list of servers to serve."""
+    """Bind loopback on BOTH stacks as separate listeners. A dual-stack mapped socket
+    (:: with IPV6_V6ONLY=0) can be bypassed by WFP callouts from VPN/AV software on
+    Windows; two explicit sockets (AF_INET 127.0.0.1 + AF_INET6 ::1) are always
+    independently reachable. Returns the list of bound servers."""
     import socket as _s
-    servers = []
-    if DUALSTACK:
-        try:
-            class DS(ThreadingHTTPServer):
-                address_family = _s.AF_INET6
-                def server_bind(self):
-                    self.socket.setsockopt(_s.IPPROTO_IPV6, _s.IPV6_V6ONLY, 0)
-                    super().server_bind()
-            servers.append(DS(("::", PORT), Handler))
-            return servers
-        except OSError:
-            pass
-    servers.append(ThreadingHTTPServer((HOST, PORT), Handler))
-    return servers
+    srvs = []
+    errs = []
+    # explicit IPv4 listener
+    try:
+        srvs.append(ThreadingHTTPServer((HOST, PORT), Handler))
+    except OSError as e:
+        errs.append(f"IPv4 {HOST}:{PORT}: {e}")
+    # explicit IPv6 listener (best effort — Windows may still have IPv6 disabled)
+    try:
+        class V6(ThreadingHTTPServer):
+            address_family = _s.AF_INET6
+            def server_bind(self):
+                # bind ::1 only; keep the socket scoped to IPv6 (no mapped addresses)
+                self.socket.setsockopt(_s.IPPROTO_IPV6, _s.IPV6_V6ONLY, 1)
+                super().server_bind()
+        srvs.append(V6(("::1", PORT), Handler))
+    except OSError as e:
+        errs.append(f"IPv6 ::1:{PORT}: {e}")
+    if not srvs:
+        raise OSError("; ".join(errs) or f"could not bind loopback port {PORT}")
+    return srvs
 
 if __name__ == "__main__":
     os.makedirs(TESTS, exist_ok=True)

@@ -56,22 +56,30 @@ def _bind_server():
 
 
 def _wait_and_open_browser():
-    """/healthz must answer before the browser opens — verifies THIS server is live."""
-    deadline = time.time() + 10
+    """/healthz must answer before the browser opens — verifies THIS server is live.
+    Long timeout + retries because antivirus software can delay the first loopback
+    connection to an unsigned binary while it scans the process."""
+    deadline = time.time() + 30
     while time.time() < deadline:
         for host in ("127.0.0.1", "::1"):  # numeric — no DNS involved, both stacks covered
             try:
-                s = socket.create_connection((host, server.PORT), timeout=1)
+                s = socket.create_connection((host, server.PORT), timeout=3)
                 s.sendall(b"GET /healthz HTTP/1.0\r\nHost: localhost\r\n\r\n")
                 data = s.recv(64)
                 s.close()
                 if b"200" in data:
-                    webbrowser.open(URL.replace("http://", f"http://{host}:").replace(f"http://{host}:", f"http://{host}:") if False else URL)
+                    webbrowser.open(URL)
                     return
             except OSError:
                 continue
-        time.sleep(0.3)
-    _fatal(f"The server bound its port but did not answer on 127.0.0.1 / ::1. A third-party firewall, antivirus or VPN (e.g. Tailscale intercepting loopback) may be blocking it. Try browsing to http://127.0.0.1:5874 manually.")
+        time.sleep(0.5)
+    _fatal("The server bound its port but did not respond to a loopback health check within 30 s.\n\n"
+           "Most likely causes:\n"
+           "  • Antivirus / endpoint protection blocking unsigned executables from binding ports\n"
+           "  • VPN software (Tailscale, ZeroTier, corporate VPN) with WFP callouts filtering loopback\n"
+           "  • Windows Firewall with a deny rule\n\n"
+           "The binary is built from public source; see https://github.com/shahabsalehi/testonini\n"
+           "for the code and a SHA-256 to verify the file you downloaded.")
 
 
 def main():
