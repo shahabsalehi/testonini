@@ -1,4 +1,4 @@
-# Security audit — TestPractice v0.1.1 (commit 0f880a6)
+# Security audit — TestPractice (last updated at release v0.1.3, commit 8b76976)
 
 ## Model-assisted scan (DeepSec 2.3.7 / Codex gpt-5.6-sol)
 Attempts: 3 (plans dsr-f0bd…, dsr-a956…, d0a00…, bdf3ae…).
@@ -25,5 +25,5 @@ claimed from it. Retain this note as the honest record.
 - Local trust: anything running as the local user can read tests/pdfs (by design —
   no multi-user model).
 - MCP on loopback: any local process can call it; that is the point of the feature.
-- PDF.js CDN fallback: if vendored copy is missing and network exists, viewer JS
-  comes from jsdelivr. Vendored copy is preferred path.
+- PDF.js is vendored since the packaging fix (no CDN fallback, zero outbound calls).
+  The dynamic import is restricted to the same-origin /vendor/… path.

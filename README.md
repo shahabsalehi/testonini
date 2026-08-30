@@ -67,12 +67,12 @@ python3 server.py          # serves http://localhost:5874 (MCP at /mcp)
 |---|---|
 | `server.py` | stdlib HTTP server: static files, `/upload-doc`, `/export-results`, MCP JSON-RPC (`list_tests` `get_test` `save_test` `validate_test` `list_pdfs` `parse_pdf` `prepare_test_from_pdf`) |
 | `launch.py` | launcher: starts the server, opens the browser, tray icon to quit |
-| `index.html` `app.js` `style.css` `pdf.js` | the app — vanilla JS, PDF.js from CDN with vendored fallback |
+| `index.html` `app.js` `style.css` `pdf.js` | the app — vanilla JS, PDF.js vendored (no CDN) |
 | `tests/*.json` | test files (schema validated by `validate_test` server-side and `validateTest` in `app.js`) |
 | `build.sh` / `build.bat` | per-platform frozen builds (GitHub Actions does this per tag too) |
 
 Security posture: binds to `127.0.0.1` only; filename validation on every route;
-no telemetry, no accounts, no outbound calls except the PDF.js CDN fallback.
+no telemetry, no accounts, fully offline (PDF.js is vendored — zero outbound calls).
 
 ## License
 
