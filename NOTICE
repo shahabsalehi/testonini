@@ -1,0 +1,33 @@
+TestPractice — local exam simulator
+Copyright 2026 shahabsalehi
+
+This product includes third-party software components:
+
+* PDF.js (vendored at vendor/pdfjs/, version 4.10.38)
+    Mozilla; licensed under the Apache License, Version 2.0.
+    https://github.com/mozilla/pdf.js
+
+* firecrawl-anydoc (Python wheel, includes pdf-inspector)
+    Firecrawl; licensed under the MIT License.
+    https://github.com/firecrawl/anydoc
+
+* reportlab
+    ReportLab; licensed under the BSD License.
+    https://www.reportlab.com/
+
+* pystray
+    Moses Palmér and contributors; licensed under the GNU LGPL v3.0
+    (unmodified, dynamically linked by the frozen launcher).
+    https://github.com/moses-palmer/pystray
+
+* Pillow
+    Licensed under the HPND-CMU license (MIT-CMU).
+    https://python-pillow.org/
+
+* Tesseract OCR (optional runtime dependency, not bundled)
+    Licensed under the Apache License, Version 2.0.
+    https://github.com/tesseract-ocr/tesseract
+
+Examination PDFs placed in pdfs/ and test JSON files in tests/ are user-provided
+content and remain the property of their respective owners. This project does
+not distribute exam materials.
