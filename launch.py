@@ -10,6 +10,14 @@ import socket
 
 import server  # same folder; PyInstaller bundles it
 
+# --noconsole leaves this process with None std streams (pythonw semantics).
+# Anything that writes to them (socketserver.handle_error, http.server request
+# logging, traceback, pystray) then dies with AttributeError(NoneType) — see
+# server.py Handler.log_message for the request-path half of this fix.
+for _name in ("stdin", "stdout", "stderr"):
+    if getattr(sys, _name, None) is None:
+        setattr(sys, _name, open(os.devnull, "r" if _name == "stdin" else "w"))
+
 # Pre-create user content folders next to the executable so users have a place to drop files.
 os.makedirs(server.TESTS, exist_ok=True)
 os.makedirs(server.PDFS, exist_ok=True)
@@ -18,10 +26,19 @@ URL = f"http://127.0.0.1:{server.PORT}"  # numeric — never depends on "localho
 
 
 def _fatal(msg):
-    """Show the error even under --noconsole (no visible console), then exit."""
+    """Show the error even under --noconsole (no visible console), then exit.
+
+    Also appends to testpractice-error.log next to the exe: a noconsole failure
+    with no trace is undebuggable on a user's machine."""
     try:
-        import ctypes, sys as _s
-        if _s.platform == "win32":
+        base = os.path.dirname(sys.executable) if getattr(sys, "frozen", False) else os.path.dirname(os.path.abspath(__file__))
+        with open(os.path.join(base, "testpractice-error.log"), "a", encoding="utf-8") as fh:
+            fh.write(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] {msg}\n\n")
+    except Exception:
+        pass
+    try:
+        import ctypes
+        if sys.platform == "win32":
             ctypes.windll.user32.MessageBoxW(0, msg, "TestPractice", 0x10)
         else:
             print(msg)
@@ -55,11 +72,17 @@ def _bind_server():
                f"Allow TestPractice through the firewall when prompted and retry.")
 
 
-def _wait_and_open_browser():
-    """/healthz must answer before the browser opens — verifies THIS server is live.
-    Long timeout + retries because antivirus software can delay the first loopback
+def _wait_and_open_browser(timeout=30.0):
+    """/healthz must answer before the browser opens — verifies the full request
+    path (accept -> handler -> response bytes), not just the bind.
+
+    Runs on the MAIN thread BEFORE the tray icon exists: serve_forever threads are
+    independent OS threads, so waiting here cannot starve them (and ctypes/win32
+    tray code is not yet running). A failure here shows a dialog with no zombie
+    tray left behind. Long timeout because antivirus can delay the first loopback
     connection to an unsigned binary while it scans the process."""
-    deadline = time.time() + 30
+    accepted_no_reply = False
+    deadline = time.time() + timeout
     while time.time() < deadline:
         for host in ("127.0.0.1", "::1"):  # numeric — no DNS involved, both stacks covered
             try:
@@ -70,9 +93,17 @@ def _wait_and_open_browser():
                 if b"200" in data:
                     webbrowser.open(URL)
                     return
+                accepted_no_reply = True  # TCP accepted, zero HTTP bytes back
             except OSError:
                 continue
         time.sleep(0.5)
+    if accepted_no_reply:
+        # TCP works but the handler never wrote a response: a server bug, not a
+        # firewall. (This was the signature of the --noconsole log_message crash.)
+        _fatal("The server accepted the connection but never sent a response.\n\n"
+               "This is a bug in TestPractice, not a firewall or VPN problem.\n"
+               "The details were written to testpractice-error.log next to the program.\n"
+               "Please report it: https://github.com/shahabsalehi/testonini/issues")
     _fatal("The server bound its port but did not respond to a loopback health check within 30 s.\n\n"
            "Most likely causes:\n"
            "  • Antivirus / endpoint protection blocking unsigned executables from binding ports\n"
@@ -86,6 +117,10 @@ def main():
     servers = _bind_server()  # synchronous bind: visible errors first
     for srv in servers:
         threading.Thread(target=srv.serve_forever, daemon=True).start()
+
+    # Health gate on the main thread, before the tray: prove requests answer,
+    # open the browser, and only then show the tray icon.
+    _wait_and_open_browser()
 
     try:
         import pystray
@@ -104,12 +139,11 @@ def main():
             _p.Menu.SEPARATOR,
             _p.MenuItem("Quit", quit_app),
         )
-        threading.Thread(target=_wait_and_open_browser, daemon=True).start()
         tray.run()
     except Exception:
-        # No tray environment — fall back to console wait, still healthz-first.
+        # No tray environment — fall back to console wait (server is already
+        # healthz-verified above).
         print(f"Serving at {URL}  (MCP: {URL}/mcp)  — Ctrl+C to stop.")
-        _wait_and_open_browser()
         try:
             while True:
                 time.sleep(3600)

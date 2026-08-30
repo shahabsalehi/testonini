@@ -22,7 +22,6 @@ ROOT = os.path.dirname(sys.executable) if getattr(sys, "frozen", False) else os.
 TESTS = os.path.join(ROOT, "tests")
 PDFS = os.path.join(ROOT, "pdfs")
 HOST, PORT = "127.0.0.1", 5874  # loopback only; 0.0.0.0 would expose the app + MCP to the network
-DUALSTACK = True  # also listen on ::1 so Windows "localhost" (IPv6-first) never hangs
 
 # ---------- validator: mirror of app.js validateTest ----------
 VALID_TYPES = {"single_choice", "multiple_choice", "true_false", "text_input", "matching", "long_text"}
@@ -322,6 +321,16 @@ import urllib.parse  # noqa: E305 (kept close to Handler for readability)
 class Handler(BaseHTTPRequestHandler):
     # Request guards: loopback app (browser + local AI clients).
     MAX_BODY = 100 * 1024 * 1024  # uploads up to 100 MB
+
+    # PyInstaller --noconsole sets sys.stderr to None (pythonw semantics). The
+    # default log_message writes to sys.stderr and send_response() logs BEFORE
+    # any response byte is written, so without this guard every request dies
+    # with AttributeError and the client gets an empty reply.
+    def log_message(self, fmt, *args):
+        if sys.stderr is not None:
+            sys.stderr.write("%s - - [%s] %s\n" % (self.address_string(),
+                                                    self.log_date_time_string(),
+                                                    fmt % args))
 
     def _browser_origin(self):
         """True unless a browser Origin header names a foreign site (CSRF gate)."""
