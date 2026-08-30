@@ -23,25 +23,33 @@ PDFS = os.path.join(ROOT, "pdfs")
 HOST, PORT = "127.0.0.1", 5874  # loopback only; 0.0.0.0 would expose the app + MCP to the network
 
 # ---------- validator: mirror of app.js validateTest ----------
+VALID_TYPES = {"single_choice", "multiple_choice", "true_false", "text_input", "matching", "long_text"}
+
 def validate_test(t):
     errors = []
     if not isinstance(t, dict) or not isinstance(t.get("questions"), list) or not t["questions"]:
         return ["Test JSON must be an object with a non-empty 'questions' array."]
-    nums = set()
-    objective_single = {"single_choice", "multiple_choice", "true_false", "matching"}
-    has_any_answer = any(q.get("correctAnswer") or q.get("acceptedAnswers")
+    nums, ids = set(), set()
+    objective = {"single_choice", "multiple_choice", "true_false", "matching"}
+    has_any_answer = any(q.get("correctAnswer") or (isinstance(q.get("acceptedAnswers"), list) and q["acceptedAnswers"])
                          or (isinstance(q.get("prompts"), list) and any(p.get("correctAnswer") for p in q["prompts"]))
                          for q in t["questions"])
     for q in t["questions"]:
-        label = f"Q{q.get('number')}" if q.get("number") is not None else str(q.get("id", "(no id)"))
-        if q.get("number") is None:
-            errors.append(f"{label}: missing 'number'")
+        num = q.get("number")
+        label = f"Q{num}" if isinstance(num, int) else str(q.get("id", "(no id)"))
+        if not isinstance(num, int):
+            errors.append(f"{label}: 'number' must be an integer")
+        elif num in nums:
+            errors.append(f"{label}: duplicate question number")
         else:
-            if q["number"] in nums:
-                errors.append(f"{label}: duplicate question number")
-            nums.add(q["number"])
-        if not q.get("type"):
-            errors.append(f"{label}: missing 'type'")
+            nums.add(num)
+        if q.get("type") not in VALID_TYPES:
+            errors.append(f"{label}: unknown type {q.get('type')!r}" if q.get("type") else f"{label}: missing 'type'")
+        qid = q.get("id")
+        if isinstance(qid, str) and qid:
+            if qid in ids:
+                errors.append(f"{label}: duplicate id {qid!r}")
+            ids.add(qid)
         prompts = q.get("prompts")
         has_subs = isinstance(prompts, list) and len(prompts) > 0
         if not q.get("prompt") and not has_subs:
@@ -53,7 +61,7 @@ def validate_test(t):
                         errors.append(f"{label} item {i+1}: missing correctAnswer")
             if not q.get("matchOptions"):
                 errors.append(f"{label}: matchOptions required for matching type")
-        elif has_any_answer and q.get("type") in objective_single and not q.get("correctAnswer"):
+        elif has_any_answer and q.get("type") in objective and q.get("correctAnswer") is None:
             errors.append(f"{label}: objective question missing 'correctAnswer'")
         if has_any_answer and q.get("type") == "text_input" and not q.get("acceptedAnswers"):
             errors.append(f"{label}: text_input requires 'acceptedAnswers' array")
@@ -62,10 +70,20 @@ def validate_test(t):
             if not opts:
                 errors.append(f"{label}: options required")
             else:
-                ids = sorted(o.get("id") for o in opts)
-                for a, b in zip(ids, ids[1:]):
-                    if a == b:
-                        errors.append(f"{label}: duplicate option '{a}'")
+                seen = set()
+                for o in opts:
+                    if not isinstance(o, dict) or not o.get("id"):
+                        errors.append(f"{label}: option missing 'id'")
+                        continue
+                    if o["id"] in seen:
+                        errors.append(f"{label}: duplicate option '{o['id']}'")
+                    seen.add(o["id"])
+        pts = q.get("points")
+        if pts is not None and (not isinstance(pts, (int, float)) or pts < 0):
+            errors.append(f"{label}: 'points' must be a non-negative number")
+    tl = t.get("timeLimitSeconds")
+    if tl is not None and (not isinstance(tl, (int, float)) or tl <= 0):
+        errors.append("'timeLimitSeconds' must be a positive number")
     return errors
 
 # ---------- MCP tool handlers ----------
