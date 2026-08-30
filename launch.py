@@ -6,22 +6,33 @@ import time
 import webbrowser
 import os
 import sys
+import socket
 
 import server  # same folder; PyInstaller bundles it
 
-# Pre-create the user content folders next to the executable so users have a place to drop files.
+# Pre-create user content folders next to the executable so users have a place to drop files.
 os.makedirs(server.TESTS, exist_ok=True)
 os.makedirs(server.PDFS, exist_ok=True)
 
+URL = f"http://localhost:{server.PORT}"
+
+
+def _fatal(msg):
+    """Show the error even under --noconsole (no visible console), then exit."""
+    try:
+        import ctypes, sys as _s
+        if _s.platform == "win32":
+            ctypes.windll.user32.MessageBoxW(0, msg, "TestPractice", 0x10)
+        else:
+            print(msg)
+    except Exception:
+        pass
+    sys.exit(1)
+
 
 def _make_icon_image():
-    """16-32px tray glyph drawn in-code: a filled rounded square with a checkmark."""
+    """Tray glyph drawn in-code: dark rounded square with a white checkmark."""
     from PIL import Image, ImageDraw
-    try:
-        import pystray
-        sizes = pystray.Icon().LOGO_SIZE if hasattr(pystray, "LOGO_SIZE") else (64, 64)
-    except Exception:
-        sizes = (64, 64)
     img = Image.new("RGBA", (64, 64), (0, 0, 0, 0))
     d = ImageDraw.Draw(img)
     d.rounded_rectangle([4, 4, 60, 60], radius=12, fill="#101828")
@@ -29,25 +40,53 @@ def _make_icon_image():
     return img
 
 
-def _run_server():
-    httpd = server.ThreadingHTTPServer((server.HOST, server.PORT), server.Handler)
-    httpd.serve_forever()
+def _bind_server():
+    """Bind synchronously so a failure is visible before the browser opens."""
+    try:
+        httpd = server.ThreadingHTTPServer((server.HOST, server.PORT), server.Handler)
+        return httpd
+    except OSError as e:
+        import errno as _errno
+        in_use = e.errno == _errno.EADDRINUSE or getattr(e, "winerror", None) == 10048
+        if in_use:
+            _fatal(f"Port {server.PORT} is already in use — is TestPractice already running?\n"
+                   f"Close the other instance (check the system tray) or restart your machine, then try again.")
+        _fatal(f"Could not bind to {server.HOST}:{server.PORT}\n\n{e}\n\n"
+               f"Another program may be using this port, or Windows Firewall blocked it.\n"
+               f"Allow TestPractice through the firewall when prompted and retry.")
+
+
+def _wait_and_open_browser():
+    """/healthz must answer before the browser opens — verifies THIS server is live."""
+    deadline = time.time() + 10
+    while time.time() < deadline:
+        try:
+            s = socket.create_connection(("127.0.0.1", server.PORT), timeout=1)
+            s.sendall(b"GET /healthz HTTP/1.0\r\nHost: localhost\r\n\r\n")
+            data = s.recv(64)
+            s.close()
+            if b"200" in data:
+                webbrowser.open(URL)
+                return
+        except OSError:
+            pass
+        time.sleep(0.3)
+    _fatal(f"The server started but did not answer on {URL}. A firewall or antivirus may be blocking it.")
 
 
 def main():
-    server_thread = threading.Thread(target=_run_server, daemon=True)
-    server_thread.start()
+    httpd = _bind_server()  # synchronous bind: visible errors first
 
-    url = f"http://localhost:{server.PORT}"
+    def _serve():
+        httpd.serve_forever()
+    threading.Thread(target=_serve, daemon=True).start()
 
     try:
         import pystray
-        from PIL import Image
         tray = pystray.Icon("TestPractice", _make_icon_image(), "Exam Practice")
 
         def open_app(_icon=None, _item=None):
-            import webbrowser
-            webbrowser.open(url)
+            webbrowser.open(URL)
 
         def quit_app(_icon=None, _item=None):
             tray.stop()
@@ -59,19 +98,12 @@ def main():
             _p.Menu.SEPARATOR,
             _p.MenuItem("Quit", quit_app),
         )
-        # open the browser once tray is up
-        def _open_once():
-            time.sleep(0.7)
-            import webbrowser
-            webbrowser.open(url)
-        threading.Thread(target=_open_once, daemon=True).start()
+        threading.Thread(target=_wait_and_open_browser, daemon=True).start()
         tray.run()
     except Exception:
-        # No tray environment (or pystray missing) — fall back to console wait.
-        print(f"Serving at {url}  (MCP: {url}/mcp)  — Ctrl+C to stop.")
-        time.sleep(0.7)
-        import webbrowser
-        webbrowser.open(url)
+        # No tray environment — fall back to console wait, still healthz-first.
+        print(f"Serving at {URL}  (MCP: {URL}/mcp)  — Ctrl+C to stop.")
+        _wait_and_open_browser()
         try:
             while True:
                 time.sleep(3600)
