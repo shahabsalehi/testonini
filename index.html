@@ -2,6 +2,8 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; worker-src 'self' blob:; object-src 'none'; base-uri 'none'">
   <meta name="viewport" content="width=1024">
   <title>Exam Practice</title>
   <link rel="stylesheet" href="style.css">
@@ -151,31 +153,6 @@ Report the saved file name back to me.</textarea>
     </div>
   </section>
 
-  <script>
-    function bindCopy(btnId, elId) {
-      document.getElementById(btnId).addEventListener('click', () => {
-        const el = document.getElementById(elId);
-        const text = el.value !== undefined ? el.value : el.textContent;
-        const done = () => {
-          const b = document.getElementById(btnId);
-          b.textContent = 'Copied ✓';
-          setTimeout(() => { b.textContent = 'Copy'; }, 1500);
-        };
-        const fallback = () => {
-          const ta = document.createElement('textarea');
-          ta.value = text;
-          document.body.appendChild(ta);
-          ta.select();
-          try { document.execCommand('copy'); done(); } catch (e) { window.prompt('Copy manually:', text); }
-          ta.remove();
-        };
-        if (navigator.clipboard && window.isSecureContext) navigator.clipboard.writeText(text).then(done).catch(fallback);
-        else fallback();
-      });
-    }
-    bindCopy('btn-copy-mcp', 'mcp-url');
-    bindCopy('btn-copy-prompt', 'mcp-prompt');
-  </script>
   <script type="module" src="app.js"></script>
 </body>
 </html>

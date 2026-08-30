@@ -1,33 +1,48 @@
-/* Offline PDF.js viewer for the exam split-pane. No fallback remote fetch:
-   if the CDN is unreachable and no local copy exists, the PDF pane shows a note. */
-const PDFJS_BASE = 'vendor/pdfjs';
+/* PDF viewer for the exam split-pane. Vendored PDF.js only — no network fetch,
+   so the "fully offline" property holds and no remote code enters the origin. */
 
 async function ensurePdfJs() {
   if (window.pdfjsLib) return window.pdfjsLib;
-  for (const url of ['vendor/pdfjs/pdf.min.mjs', 'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/build/pdf.min.mjs']) {
-    try {
-      const mod = await import(url);
-      window.pdfjsLib = mod;
-      mod.GlobalWorkerOptions.workerSrc = url.replace('pdf.min.mjs', 'pdf.worker.min.mjs');
-      return mod;
-    } catch (e) { /* try next source */ }
+  try {
+    const mod = await import('/vendor/pdfjs/pdf.min.mjs');
+    window.pdfjsLib = mod;
+    mod.GlobalWorkerOptions.workerSrc = '/vendor/pdfjs/pdf.worker.min.mjs';
+    return mod;
+  } catch (e) {
+    return null;
   }
-  return null;
 }
 
 export async function renderPdf(container, url) {
-  container.innerHTML = '<div class="pdf-toolbar"><span>Source document</span></div><p class="muted">Loading document…</p>';
+  const toolbar = document.createElement('div');
+  toolbar.className = 'pdf-toolbar';
+  const span = document.createElement('span');
+  span.textContent = 'Source document';
+  toolbar.appendChild(span);
+  const info = document.createElement('span');
+  info.id = 'pdfPageInfo';
+  toolbar.appendChild(info);
+  const loading = document.createElement('p');
+  loading.className = 'muted';
+  loading.textContent = 'Loading document…';
+  container.replaceChildren(toolbar, loading);
+
   const lib = await ensurePdfJs();
   if (!lib || !url) {
-    container.innerHTML = '<div class="pdf-toolbar">Source document</div><p class="muted">No PDF available for this test. ' +
-      'Question content stands alone. Place a PDF at the path named in the test file (sourcePdf) to view it here.</p>';
+    const p = document.createElement('p');
+    p.className = 'muted';
+    p.textContent = 'No PDF available for this test. Question content stands alone. ' +
+      'Place a PDF at the path named in the test file (sourcePdf) to view it here.';
+    container.replaceChildren(toolbar, p);
     return;
   }
   try {
     const doc = await lib.getDocument(url).promise;
     // Server-side parse_pdf (anydoc) is the authoritative scanned/text signal; this pane just renders.
-    container.innerHTML = '<div class="pdf-toolbar"><span>Source document</span> <span id="pdfPageInfo"></span></div><div id="pdfPages"></div>';
-    const pagesEl = container.querySelector('#pdfPages');
+    const pagesEl = document.createElement('div');
+    pagesEl.id = 'pdfPages';
+    toolbar.appendChild(info);
+    container.replaceChildren(toolbar, pagesEl);
     for (let i = 1; i <= doc.numPages; i++) {
       const page = await doc.getPage(i);
       const base = page.getViewport({ scale: 1 });
@@ -39,15 +54,15 @@ export async function renderPdf(container, url) {
       canvas.height = viewport.height;
       pagesEl.appendChild(canvas);
       await page.render({ canvas, canvasContext: canvas.getContext('2d'), viewport }).promise;
+      info.textContent = i + ' / ' + doc.numPages;
     }
   } catch (e) {
-    // Show only the relative path, never an absolute origin (could leak host URLs in screenshots).
-    const scrub = s => String(s || '').replace(/^https?:\/\/[^/\s]+/ig, '')
-                                .replace(/^https?:\/\/[^/\s"']+\.["']/ig, '"').replace(/\s+/g, ' ').trim();
-    const rel = scrub(url);
-    const msg = scrub(e && e.message || e);
-    container.innerHTML = '<div class="pdf-toolbar">Source document</div>' +
-      '<p class="error-text">Could not load the PDF (missing file "' + rel + '"). ' +
-      'The exam can still be taken without it.</p>';
+    // No URLs in messages: only the bare relative filename, nothing browser-origin derived.
+    const name = String(url).split('/').pop();
+    const p = document.createElement('p');
+    p.className = 'error-text';
+    p.textContent = 'Could not load the PDF (missing file "' + name + '"). ' +
+      'The exam can still be taken without it.';
+    container.replaceChildren(toolbar, p);
   }
 }
