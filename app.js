@@ -4,7 +4,7 @@ import { renderPdf } from './pdf.js';
 const LS_TEST = 'testonini.test';
 const LS_ATTEMPT_PREFIX = 'testonini.attempt.';
 
-let test = null;
+let test = null;      // the working test object; the setup screen may replace this with a subset view
 let attempt = null; // { testHash, startedAt, answers, flags, current, submitted }
 const tabId = Math.random().toString(36).slice(2, 10);
 
@@ -210,10 +210,114 @@ async function importTest(t, rawText) {
   const prev = loadAttempt(t._hash);
   if (prev && !prev.submitted) {
     attempt = prev;
-    startExam(false);
+    startExam(false);            // resume: skip setup, restore exactly where you left off
   } else {
-    beginAttempt();
+    showSetup();                 // fresh attempt: user configures timer + question set
   }
+}
+
+/* ---------- Pre-exam setup screen ---------- */
+let setupSel = null; // { minutes: number|null, included: Set<number> (index) }
+
+function fmtTime(sec) {
+  const m = Math.floor(sec / 60), s = sec % 60;
+  return m + (s ? ':' + String(s).padStart(2, '0') + ' min' : ' min');
+}
+
+function showSetup() {
+  $('#setup-test-name').textContent = test.title + ' — ' + test.questions.length + ' questions';
+  $('#setup-default-time').textContent = timeLimitStr(test.timeLimitSeconds);
+  // timer radios state
+  const radios = document.querySelectorAll('input[name="timermode"]');
+  radios.forEach(r => r.checked = r.value === 'default');
+  $('#custom-time-row').style.display = 'none';
+  // question checkboxes
+  const box = $('#setup-questions');
+  clear(box);
+  setupSel = { minutes: null, included: new Set(test.questions.map((_, i) => i)) };
+  test.questions.forEach((q, i) => {
+    const lbl = el('label', { class: 'setup-qrow' });
+    const cb = el('input', { type: 'checkbox' });
+    cb.checked = true;
+    cb.addEventListener('change', () => {
+      cb.checked ? setupSel.included.add(i) : setupSel.included.delete(i);
+      updateRangeBtns();
+    });
+    lbl.appendChild(cb);
+    const t = el('span', {}, '');
+    t.appendChild(el('strong', {}, 'Q' + q.number + ' '));
+    t.appendChild(document.createTextNode(shortText(q)));
+    lbl.appendChild(t);
+    box.appendChild(lbl);
+  });
+  // range quick-select buttons
+  const rangesDiv = $('#setup-ranges');
+  clear(rangesDiv);
+  const mk = (label, fn) => {
+    const b = el('button', { class: 'btn btn-ghost btn-sm', type: 'button' }, label);
+    b.addEventListener('click', () => { fn(); refreshChecks(); updateRangeBtns(); });
+    return b;
+  };
+  rangesDiv.appendChild(mk('All', () => test.questions.forEach((_, i) => setupSel.included.add(i))));
+  rangesDiv.appendChild(mk('None', () => setupSel.included.clear()));
+  // block buttons: chunks of 10 questions (e.g. Q1-10, Q11-20 …) = the "chapter division" use case
+  const chunk = 10;
+  for (let s = 0; s < test.questions.length; s += chunk) {
+    const e = Math.min(s + chunk - 1, test.questions.length - 1);
+    rangesDiv.appendChild(mk('Q' + test.questions[s].number + '\u2013' + test.questions[e].number, () => {
+      for (let k = s; k <= e; k++) setupSel.included.add(k);
+    }));
+  }
+  $('#setup-error').textContent = '';
+  document.querySelectorAll('input[name="timermode"]').forEach(r => {
+    r.onchange = () => { $('#custom-time-row').style.display = r.value === 'custom' && r.checked ? '' : 'none'; };
+  });
+  show('setup-screen');
+}
+
+function timeLimitStr(sec) {
+  if (sec == null) return '60 min (default)';
+  return fmtTime(sec);
+}
+
+function shortText(q) {
+  const s = (q.prompt || (q.prompts && q.prompts[0] && q.prompts[0].text) || '').slice(0, 64);
+  return s + (s.length > 60 ? '…' : '');
+}
+
+function refreshChecks() {
+  document.querySelectorAll('#setup-questions input[type=checkbox]').forEach((cb, i) => {
+    cb.checked = setupSel.included.has(i);
+  });
+}
+
+function updateRangeBtns() { /* visual only; nothing to do — the Start calculation handles it */ }
+
+function startFromSetup() {
+  const mode = document.querySelector('input[name="timermode"]:checked').value;
+  let seconds = test.timeLimitSeconds;
+  if (mode === 'none') seconds = null;
+  else if (mode === 'custom') {
+    const m = parseInt($('#setup-minutes').value, 10);
+    if (!m || m < 1 || m > 600) { $('#setup-error').textContent = 'Enter a duration between 1 and 600 minutes.'; return; }
+    seconds = m * 60;
+  }
+  if (!setupSel.included.size) { $('#setup-error').textContent = 'Select at least one question.'; return; }
+  $('#setup-error').textContent = '';
+  // attempt-scoped view: rebuild the working test (hash extended with the chosen numbers so each
+  // configuration has its own attempt/resume slot)
+  const chosen = test.questions.filter((_, i) => setupSel.included.has(i));
+  test = {
+    title: test.title + (chosen.length < test.questions.length
+      ? ' (' + chosen.length + ' of ' + test.questions.length + ' questions)' : ''),
+    timeLimitSeconds: seconds,
+    sourcePdf: test.sourcePdf,
+    questions: chosen
+  };
+  hashOf({ title: test.title, questions: test.questions }).then(h => {
+    test._hash = h;
+    beginAttempt();
+  });
 }
 
 function beginAttempt() {
@@ -430,7 +534,7 @@ function scoreQuestion(q) {
   if (q.correctAnswer == null) return { correct: null, given: given || '' };
   const correctSet = new Set([].concat(q.correctAnswer));
   const givenSet = new Set(Array.isArray(given) ? given : (given != null && given !== '' ? [given] : []));
-  if (givenSet.size === 0) return { correct: null, given: '' };
+  if (givenSet.size === 0) return { correct: false, given: '' };  // an answer key exists but nothing was answered → wrong
   if (givenSet.size !== correctSet.size) return { correct: false, given: [...givenSet].join(', ') };
   for (const g of givenSet) if (!correctSet.has(g)) return { correct: false, given: [...givenSet].join(', ') };
   return { correct: true, given: [...givenSet].join(', ') };
@@ -602,3 +706,6 @@ function bindCopy(btnId, elId) {
 }
 bindCopy('btn-copy-mcp', 'mcp-url');
 bindCopy('btn-copy-prompt', 'mcp-prompt');
+
+$('#btn-setup-start').addEventListener('click', startFromSetup);
+$('#btn-setup-cancel').addEventListener('click', () => renderHome());

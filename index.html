@@ -104,8 +104,37 @@ Report the saved file name back to me.</textarea>
     </main>
   </section>
 
-  <!-- Exam shell -->
-  <section id="exam-screen" class="screen">
+  <!-- Pre-exam setup -->
+  <section id="setup-screen" class="screen">
+    <div class="home-panel">
+      <h1>Set up your attempt</h1>
+      <p class="muted" id="setup-test-name"></p>
+
+      <h3 class="setup-h3">Timer</h3>
+      <div class="setup-row">
+        <label class="setup-opt"><input type="radio" name="timermode" value="default" checked> Use test time limit (<span id="setup-default-time"></span>)</label>
+        <label class="setup-opt"><input type="radio" name="timermode" value="custom"> Custom limit</label>
+        <label class="setup-opt"><input type="radio" name="timermode" value="none"> Untimed (free practice)</label>
+      </div>
+      <div class="setup-row" id="custom-time-row" style="display:none">
+        <label>Minutes: <input type="number" id="setup-minutes" min="1" max="600" value="60" class="text-input" style="max-width:120px"></label>
+      </div>
+
+      <h3 class="setup-h3">Questions</h3>
+      <p class="muted">Tick the questions to include. Use range buttons to select a block quickly.</p>
+      <div class="setup-row" id="setup-ranges"></div>
+      <div id="setup-questions" class="setup-questions"></div>
+
+      <div class="setup-row" style="margin-top:1.5rem">
+        <button id="btn-setup-start" class="btn btn-primary">Start</button>
+        <button id="btn-setup-cancel" class="btn btn-ghost">◀ Cancel</button>
+      </div>
+      <p id="setup-error" class="error-text"></p>
+    </div>
+  </section>
+
+   <!-- Exam shell -->
+   <section id="exam-screen" class="screen">
     <div class="exam-shell">
       <header class="exam-header">
         <span class="exam-title" id="exam-title"></span>
