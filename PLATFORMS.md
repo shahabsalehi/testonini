@@ -25,5 +25,5 @@ Optional OCR: install https://github.com/UB-Mannheim/tesseract/wiki (add to PATH
 
 ## Runtime requirements
 - Nothing to install for the user: server + UI + reportlab + anydoc are frozen inside.
-- PDF.js: loads from vendored path first, CDN fallback; fully offline except that fallback.
+- PDF.js: vendored inside the binary; fully offline, zero outbound requests.
 - OCR needs the platform tesseract binary; everything else is optional-degradation.
