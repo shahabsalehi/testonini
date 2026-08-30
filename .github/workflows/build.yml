@@ -64,6 +64,18 @@ jobs:
           curl -f http://localhost:5874/app.js -o /dev/null
           curl -f http://localhost:5874/vendor/pdfjs/pdf.min.mjs -o /dev/null
           kill $TESTPID
+      - name: Ad-hoc sign (macOS) — avoids "damaged" warnings on Apple Silicon
+        if: runner.os == 'macOS'
+        run: codesign --force --deep --sign - dist/TestPractice
+      - name: SHA-256 checksums
+        if: runner.os != 'Windows'
+        run: |
+          cd dist && sha256sum TestPractice > TestPractice.sha256
+      - name: SHA-256 checksums
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          (Get-FileHash dist\TestPractice.exe -Algorithm SHA256).Hash | Out-File -Encoding ascii dist\TestPractice.exe.sha256
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
