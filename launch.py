@@ -14,7 +14,7 @@ import server  # same folder; PyInstaller bundles it
 os.makedirs(server.TESTS, exist_ok=True)
 os.makedirs(server.PDFS, exist_ok=True)
 
-URL = f"http://localhost:{server.PORT}"
+URL = f"http://127.0.0.1:{server.PORT}"  # numeric — never depends on "localhost" resolving (VPNs/DNS can hijack it)
 
 
 def _fatal(msg):
@@ -59,18 +59,19 @@ def _wait_and_open_browser():
     """/healthz must answer before the browser opens — verifies THIS server is live."""
     deadline = time.time() + 10
     while time.time() < deadline:
-        try:
-            s = socket.create_connection(("localhost", server.PORT), timeout=1)  # same resolution path the browser takes
-            s.sendall(b"GET /healthz HTTP/1.0\r\nHost: localhost\r\n\r\n")
-            data = s.recv(64)
-            s.close()
-            if b"200" in data:
-                webbrowser.open(URL)
-                return
-        except OSError:
-            pass
+        for host in ("127.0.0.1", "::1"):  # numeric — no DNS involved, both stacks covered
+            try:
+                s = socket.create_connection((host, server.PORT), timeout=1)
+                s.sendall(b"GET /healthz HTTP/1.0\r\nHost: localhost\r\n\r\n")
+                data = s.recv(64)
+                s.close()
+                if b"200" in data:
+                    webbrowser.open(URL.replace("http://", f"http://{host}:").replace(f"http://{host}:", f"http://{host}:") if False else URL)
+                    return
+            except OSError:
+                continue
         time.sleep(0.3)
-    _fatal(f"The server started but did not answer on {URL}. A firewall or antivirus may be blocking it.")
+    _fatal(f"The server bound its port but did not answer on 127.0.0.1 / ::1. A third-party firewall, antivirus or VPN (e.g. Tailscale intercepting loopback) may be blocking it. Try browsing to http://127.0.0.1:5874 manually.")
 
 
 def main():
