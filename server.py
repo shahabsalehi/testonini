@@ -8,6 +8,7 @@ author tests/ JSON files from PDFs.
 """
 import json
 import traceback
+import threading
 import mimetypes
 import os
 import re
@@ -21,6 +22,7 @@ ROOT = os.path.dirname(sys.executable) if getattr(sys, "frozen", False) else os.
 TESTS = os.path.join(ROOT, "tests")
 PDFS = os.path.join(ROOT, "pdfs")
 HOST, PORT = "127.0.0.1", 5874  # loopback only; 0.0.0.0 would expose the app + MCP to the network
+DUALSTACK = True  # also listen on ::1 so Windows "localhost" (IPv6-first) never hangs
 
 # ---------- validator: mirror of app.js validateTest ----------
 VALID_TYPES = {"single_choice", "multiple_choice", "true_false", "text_input", "matching", "long_text"}
@@ -566,7 +568,33 @@ class Handler(BaseHTTPRequestHandler):
             self._send(500, str(e).encode(), "text/plain")
 
 
+def _make_server():
+    """Bind loopback on both stacks when possible; return list of servers to serve."""
+    import socket as _s
+    servers = []
+    if DUALSTACK:
+        try:
+            class DS(ThreadingHTTPServer):
+                address_family = _s.AF_INET6
+                def server_bind(self):
+                    self.socket.setsockopt(_s.IPPROTO_IPV6, _s.IPV6_V6ONLY, 0)
+                    super().server_bind()
+            servers.append(DS(("::", PORT), Handler))
+            return servers
+        except OSError:
+            pass
+    servers.append(ThreadingHTTPServer((HOST, PORT), Handler))
+    return servers
+
 if __name__ == "__main__":
     os.makedirs(TESTS, exist_ok=True)
+    os.makedirs(PDFS, exist_ok=True)
+    for srv in _make_server():
+        threading.Thread(target=srv.serve_forever, daemon=True).start()
     print(f"Serving {ROOT} at http://{HOST}:{PORT}  (MCP endpoint: http://{HOST}:{PORT}/mcp)")
-    ThreadingHTTPServer((HOST, PORT), Handler).serve_forever()
+    import time as _t
+    try:
+        while True:
+            _t.sleep(3600)
+    except KeyboardInterrupt:
+        pass

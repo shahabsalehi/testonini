@@ -41,17 +41,16 @@ def _make_icon_image():
 
 
 def _bind_server():
-    """Bind synchronously so a failure is visible before the browser opens."""
+    """Bind synchronously (both loopback stacks) so a failure is visible before the browser opens."""
     try:
-        httpd = server.ThreadingHTTPServer((server.HOST, server.PORT), server.Handler)
-        return httpd
+        return server._make_server()
     except OSError as e:
         import errno as _errno
         in_use = e.errno == _errno.EADDRINUSE or getattr(e, "winerror", None) == 10048
         if in_use:
             _fatal(f"Port {server.PORT} is already in use — is TestPractice already running?\n"
                    f"Close the other instance (check the system tray) or restart your machine, then try again.")
-        _fatal(f"Could not bind to {server.HOST}:{server.PORT}\n\n{e}\n\n"
+        _fatal(f"Could not bind to loopback port {server.PORT}\n\n{e}\n\n"
                f"Another program may be using this port, or Windows Firewall blocked it.\n"
                f"Allow TestPractice through the firewall when prompted and retry.")
 
@@ -61,7 +60,7 @@ def _wait_and_open_browser():
     deadline = time.time() + 10
     while time.time() < deadline:
         try:
-            s = socket.create_connection(("127.0.0.1", server.PORT), timeout=1)
+            s = socket.create_connection(("localhost", server.PORT), timeout=1)  # same resolution path the browser takes
             s.sendall(b"GET /healthz HTTP/1.0\r\nHost: localhost\r\n\r\n")
             data = s.recv(64)
             s.close()
@@ -75,11 +74,9 @@ def _wait_and_open_browser():
 
 
 def main():
-    httpd = _bind_server()  # synchronous bind: visible errors first
-
-    def _serve():
-        httpd.serve_forever()
-    threading.Thread(target=_serve, daemon=True).start()
+    servers = _bind_server()  # synchronous bind: visible errors first
+    for srv in servers:
+        threading.Thread(target=srv.serve_forever, daemon=True).start()
 
     try:
         import pystray
