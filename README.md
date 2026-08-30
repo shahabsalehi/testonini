@@ -25,10 +25,13 @@ exam PDF ──▶ TestPractice ──▶ timed split-screen exam ──▶ auto
      local MCP endpoint (`http://localhost:5874/mcp`, no installation) and writes the
      test JSON. A ready-made prompt is on the landing page.
    - **JSON import**: bring your own file; the validator checks it before the exam.
-3. **Take the exam** — countdown timer with auto-submit, question palette
+3. **Set up the attempt** — override the timer (custom minutes or untimed free practice)
+   and pick which questions you want: quick-select range blocks (Q1–10, Q11–20 …) let
+   you drill one chapter or section without touching the JSON.
+4. **Take the exam** — countdown timer with auto-submit, question palette
    (○ unanswered ● answered ⚑ flagged ◉ current), split-screen passage view,
    autosave + resume, review-before-submit.
-4. **Results** — auto-marking with per-question comparisons (right / wrong / manual),
+5. **Results** — auto-marking with per-question comparisons (right / wrong / manual),
    downloadable PDF summary.
 
 ![Exam](docs/screenshots/exam.jpg)
