@@ -14,6 +14,9 @@ import re
 import sys
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
+# Immutable web assets: packaged inside the frozen exe (PyInstaller _MEIPASS); repo root in dev.
+ASSETS = getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(__file__)))
+# Mutable user data: next to the executable when frozen (portable), else repo root.
 ROOT = os.path.dirname(sys.executable) if getattr(sys, "frozen", False) else os.path.dirname(os.path.abspath(__file__))
 TESTS = os.path.join(ROOT, "tests")
 PDFS = os.path.join(ROOT, "pdfs")
@@ -90,13 +93,28 @@ def tool_get_test(args):
 
 def tool_save_test(args):
     os.makedirs(TESTS, exist_ok=True)
-    path = _safe_name(args["file"])
+    try:
+        path = _safe_name(args["file"])
+    except ValueError as e:
+        return {"saved": False, "error": str(e)}
     body = args["test"]
     if isinstance(body, str):
-        body = json.loads(body)
-    with open(path, "w", encoding="utf-8") as fh:
+        try:
+            body = json.loads(body)
+        except Exception as e:
+            return {"saved": False, "error": f"invalid JSON: {e}"}
+    errors = validate_test(body)
+    # reject structurally-broken tests outright; shape warnings still save
+    if any("must be an object with a non-empty" in e for e in errors):
+        return {"saved": False, "validation_errors": errors}
+    # transactional: temp file in tests/ then atomic replace; the polling UI never sees a partial write
+    tmp = path + ".part"
+    with open(tmp, "w", encoding="utf-8") as fh:
         json.dump(body, fh, indent=2, ensure_ascii=False)
-    return {"saved": args["file"], "validation_errors": validate_test(body)}
+        fh.flush()
+        os.fsync(fh.fileno())
+    os.replace(tmp, path)
+    return {"saved": args["file"], "validation_errors": errors}
 
 def tool_validate_test(args):
     body = args["test"]
@@ -158,33 +176,39 @@ def _ocr_pdf_scanned(filename, dpi=150):
     """Best-effort local OCR of a scanned PDF via tesseract. Returns per-page text dict.
     ponytail: sequential single-thread pass; fine for personal use, thread pool if slow."""
     try:
-        import fitz, subprocess, tempfile
+        import fitz, subprocess
     except ImportError:
         return None, "PyMuPDF (fitz) not available for page rendering"
     try:
         subprocess.run(["tesseract", "--version"], capture_output=True, check=True, timeout=10)
     except Exception:
         return None, "tesseract not installed — apt install tesseract-ocr tesseract-ocr-eng"
+    import tempfile
     path = os.path.join(PDFS, filename)
     d = fitz.open(path)
     texts = {}
-    tmpdir = tempfile.mkdtemp()
-    for i in range(len(d)):
-        png = os.path.join(tmpdir, f"p{i}.png")
-        d[i].get_pixmap(dpi=dpi).save(png)
-        out = os.path.join(tmpdir, f"o{i}")
-        subprocess.run(["tesseract", png, out, "--psm", "4"], capture_output=True, timeout=60)
-        if os.path.isfile(out + ".txt"):
-            t = open(out + ".txt", encoding="utf-8", errors="replace").read().strip()
-            if t:
-                texts[str(i + 1)] = t[:4000]
-        os.remove(png)
+    with tempfile.TemporaryDirectory(prefix="testpractice-ocr-") as tmpdir:
+        for i in range(len(d)):
+            png = os.path.join(tmpdir, f"p{i}.png")
+            d[i].get_pixmap(dpi=dpi).save(png)
+            out = os.path.join(tmpdir, f"o{i}")
+            subprocess.run(["tesseract", png, out, "--psm", "4"], capture_output=True, timeout=60)
+            txt_path = out + ".txt"
+            if os.path.isfile(txt_path):
+                t = open(txt_path, encoding="utf-8", errors="replace").read().strip()
+                if t:
+                    texts[str(i + 1)] = t[:4000]
     return texts, None
+
 
 def parse_pdfs_payload(filename):
     import anydoc
-    path = os.path.join(PDFS, filename)
-    if not os.path.isfile(path):
+    # containment: reject absolute paths and traversal before touching the FS
+    if os.path.isabs(filename) or ".." in filename.replace("\\", "/").split("/"):
+        return {"error": "invalid file name"}
+    base = os.path.realpath(PDFS)
+    path = os.path.realpath(os.path.join(PDFS, filename))
+    if not path.startswith(base + os.sep) or not os.path.isfile(path):
         return {"error": "not found", "available": tool_list_pdfs({})}
     try:
         md = anydoc.to_markdown(path)
@@ -269,13 +293,38 @@ def handle_mcp(msg):
             return mcp_response(id_, {"content": [{"type": "text", "text": json.dumps(data, ensure_ascii=False)}]})
         except Exception as e:
             return mcp_response(id_, {"isError": True, "content": [{"type": "text", "text": str(e)}]})
-    if id_ is not None:
+    if id_ is not None:  # (end of handle_mcp — notifications return None silently)
         return mcp_response(id_, error={"code": -32601, "message": f"Method not found: {method}"})
     return None
 
-import urllib.parse
+import urllib.parse  # noqa: E305 (kept close to Handler for readability)
 
 class Handler(BaseHTTPRequestHandler):
+    # Request guards: loopback app (browser + local AI clients).
+    MAX_BODY = 100 * 1024 * 1024  # uploads up to 100 MB
+
+    def _browser_origin(self):
+        """True unless a browser Origin header names a foreign site (CSRF gate)."""
+        origin = self.headers.get('Origin') or ''
+        if origin == '':
+            return True  # non-browser client (curl, MCP SDK)
+        ok_origins = {f'http://localhost:{PORT}', f'http://127.0.0.1:{PORT}',
+                      f'https://localhost:{PORT}', f'https://127.0.0.1:{PORT}',
+                      f'http://{self.headers.get("Host", "localhost:5874")}'}
+        return origin in ok_origins
+
+    def _read_body(self, limit=MAX_BODY):
+        try:
+            length = int(self.headers.get("Content-Length", 0))
+        except (TypeError, ValueError):
+            return None
+        if length < 0 or length > limit:
+            return None
+        try:
+            return self.rfile.read(length)
+        except Exception:
+            return None
+
     def _send(self, code, body, ctype="text/plain; charset=utf-8"):
         self.send_response(code)
         self.send_header("Content-Type", ctype)
@@ -292,17 +341,39 @@ class Handler(BaseHTTPRequestHandler):
         if parsed.path == "/healthz":
             self._send(200, b"ok")
             return
-        rel = urllib.parse.unquote(parsed.path).lstrip("/") or "index.html"
-        full = os.path.normpath(os.path.join(ROOT, rel))
-        if not full.startswith(ROOT) or not os.path.isfile(full):
+        rel = urllib.parse.unquote(parsed.path).lstrip("/")
+        if not rel or rel.endswith("/"):
+            rel = "index.html"
+        # Allowlist: bundled web assets first (frozen exe), then user data dirs only.
+        roots = {"tests": TESTS, "pdfs": PDFS}
+        top = rel.split("/", 1)[0]
+        if top in roots:
+            base = os.path.realpath(roots[top])
+            full = os.path.realpath(os.path.join(base, rel[len(top) + 1:]))
+            if full.startswith(base + os.sep) and os.path.isfile(full):
+                ctype = mimetypes.guess_type(full)[0] or "application/octet-stream"
+                with open(full, "rb") as fh:
+                    self._send(200, fh.read(), ctype)
+                return
             self._send(404, b"not found")
             return
-        ctype = mimetypes.guess_type(full)[0] or "application/octet-stream"
-        with open(full, "rb") as fh:
-            self._send(200, fh.read(), ctype)
+        # bundled web asset (index.html, app.js, vendor/…)
+        assets = os.path.realpath(ASSETS)
+        full = os.path.realpath(os.path.join(assets, rel))
+        if full.startswith(assets + os.sep) and os.path.isfile(full):
+            ctype = mimetypes.guess_type(full)[0] or "application/octet-stream"
+            with open(full, "rb") as fh:
+                self._send(200, fh.read(), ctype)
+            return
+        self._send(404, b"not found")
+        return
 
     def do_POST(self):
         path = urllib.parse.urlparse(self.path).path
+        # CSRF gate: a browser page from a foreign origin cannot silently mutate state.
+        if not self._browser_origin():
+            self._send(403, b"cross-origin requests not allowed", "text/plain")
+            return
         if path == "/upload-doc":
             return self._handle_upload_doc()
         if path == "/export-results":
@@ -310,55 +381,93 @@ class Handler(BaseHTTPRequestHandler):
         if path != "/mcp":
             self._send(404, b"not found")
             return
-        # /mcp JSON-RPC
-        try:
-            length = int(self.headers.get("Content-Length", 0))
-            msg = json.loads(self.rfile.read(length) or b"null")
-        except Exception as e:
-            self._send(400, json.dumps({"jsonrpc": "2.0", "id": None, "error": {"code": -32700, "message": str(e)}}).encode(), "application/json")
+        # /mcp JSON-RPC — tolerate malformed input without killing the handler.
+        raw = self._read_body(limit=10 * 1024 * 1024)
+        if raw is None:
+            self._send(413, b"payload too large or unreadable", "text/plain")
             return
-        if isinstance(msg, list):
-            replies = [r for m in msg if (r := handle_mcp(m))]
-        else:
-            replies = [r for r in [handle_mcp(msg)] if r]
+        try:
+            msg = json.loads(raw or b"null")
+        except Exception as e:
+            self._send(400, json.dumps({"jsonrpc": "2.0", "id": None,
+                "error": {"code": -32700, "message": f"invalid JSON: {e}"}}).encode(), "application/json")
+            return
+        batch = msg if isinstance(msg, list) else [msg]
+        replies = []
+        for m in batch:
+            if not isinstance(m, dict):
+                if m is not None:
+                    replies.append(mcp_response(None, error={"code": -32600, "message": "invalid request object"}))
+                continue
+            r = handle_mcp(m)
+            if r is not None:
+                replies.append(r)
+        if not replies:
+            self._send(202, b"", "application/json")  # notifications only
+            return
         body = json.dumps(replies[0] if len(replies) == 1 else replies, ensure_ascii=False).encode()
         self._send(200, body, "application/json")
 
     def _handle_upload_doc(self):
-        """Multipart upload of one document into pdfs/, then run intake on it.
-        ponytail: minimal multipart parser (single file, no nested parts)."""
+        """Multipart upload of one document into pdfs/ (atomic), then run intake."""
         ctype = self.headers.get("Content-Type", "")
-        m = re.search(r'boundary=([^;]+)', ctype)
+        m = re.search(r'boundary="?([^";]+)"?', ctype, re.I)
         if not m:
             self._send(400, b"multipart/form-data expected", "text/plain")
             return
-        try:
-            length = int(self.headers.get("Content-Length", 0))
-            body = self.rfile.read(length)
-        except Exception as e:
-            self._send(400, str(e).encode(), "text/plain")
+        body = self._read_body(limit=self.MAX_BODY)
+        if body is None:
+            self._send(400, b"missing or oversized body", "text/plain")
             return
-        boundary = m.group(1).encode()
-        parts = body.split(b"--" + boundary)
+        boundary = m.group(1).strip().encode()
+        delim = b"--" + boundary
         fname = None
         filedata = None
-        for part in parts:
-            if b"filename=" in part:
-                head, _, data = part.partition(b"\r\n\r\n")
-                fm = re.search(rb'filename="([^"]+)"', head)
-                if fm:
-                    fname = os.path.basename(fm.group(1).decode())
-                    filedata = data.rstrip(b"\r\n")
+        # iterate parts without splitting on content bytes: find delimiters properly
+        idx = body.find(delim)
+        while idx != -1:
+            end = body.find(delim, idx + len(delim))
+            if end == -1:
                 break
+            part = body[idx + len(delim):end]
+            if part.startswith(b"--"):  # closing
+                break
+            part = part.lstrip(b"\r\n")
+            head, sep, data = part.partition(b"\r\n\r\n")
+            if sep and b"filename=" in head and data:
+                # strip the trailing CRLF that precedes the next boundary
+                data = data[:-2] if data.endswith(b"\r\n") else data
+                fm = re.search(rb'filename="([^"]*)"|filename\*=utf-8\'\'([^\r\n;]*)', head, re.I)
+                if fm:
+                    raw = fm.group(1) or urllib.parse.unquote_to_bytes(fm.group(2) or b"")
+                    try:
+                        fname = os.path.basename(raw.decode("utf-8", "replace"))
+                    except Exception:
+                        fname = None
+                    filedata = data
+                    break
+            idx = end
+            # find next part start after CRLF following boundary
         if not fname or filedata is None:
             self._send(400, b"no file part found", "text/plain")
             return
-        if not re.fullmatch(r"[\w .()-]+\.(pdf|docx|doc|rtf|odt|epub|csv|xlsx)", fname):
+        fname = fname.rstrip(" .")  # Windows reserved trailing dots/spaces
+        if not re.fullmatch(r"[A-Za-z0-9_ .()-]+\.(pdf|docx|doc|rtf|odt|epub|csv|xlsx)", fname, re.I):
             self._send(400, b"unsupported file name/type", "text/plain")
             return
+        for reserved in ("CON", "PRN", "AUX", "NUL", "COM1", "LPT1"):
+            if fname.upper().startswith(reserved):
+                self._send(400, b"reserved file name", "text/plain")
+                return
         os.makedirs(PDFS, exist_ok=True)
-        with open(os.path.join(PDFS, fname), "wb") as fh:
+        dest = os.path.join(PDFS, fname)
+        # atomic write: temp file in the same dir then replace (never truncates an existing file)
+        tmp = dest + ".part"
+        with open(tmp, "wb") as fh:
             fh.write(filedata)
+            fh.flush()
+            os.fsync(fh.fileno())
+        os.replace(tmp, dest)
         # Intake (may take ~17s for large scans due to OCR; the client shows a progress note)
         try:
             import anydoc  # noqa: F401
@@ -368,6 +477,11 @@ class Handler(BaseHTTPRequestHandler):
         self._send(200, json.dumps(result, ensure_ascii=False).encode(), "application/json")
 
     def _handle_export_results(self):
+        from xml.sax.saxutils import escape as _xesc
+
+        def E(s):  # reportlab Paragraph expects XML-ish markup: escape every untrusted fragment
+            return _xesc(str(s))
+
         try:
             length = int(self.headers.get("Content-Length", 0))
             payload = json.loads(self.rfile.read(length) or b"{}")
@@ -385,9 +499,9 @@ class Handler(BaseHTTPRequestHandler):
             doc = SimpleDocTemplate(buf, pagesize=A4, title="Exam Results")
             styles = getSampleStyleSheet()
             st = styles["Normal"]
-            story = [Paragraph("Exam Results - " + payload.get("title", "Practice Test"), styles["Title"])]
+            story = [Paragraph("Exam Results - " + E(payload.get("title", "Practice Test")), styles["Title"])]
             story.append(Spacer(1, 3 * mm))
-            story.append(Paragraph("Score: " + payload.get("score", ""), styles["Heading2"]))
+            story.append(Paragraph("Score: " + E(payload.get("score", "")), styles["Heading2"]))
 
             rows = payload.get("rows", [])
             right = [r for r in rows if r.get("verdict") == "RIGHT"]
@@ -397,17 +511,17 @@ class Handler(BaseHTTPRequestHandler):
             if right:
                 story.append(Spacer(1, 3 * mm))
                 story.append(Paragraph("What went well", styles["Heading3"]))
-                story.append(Paragraph("Strong areas (answered correctly): " + ", ".join("Q" + str(r["number"]) for r in right) + ".", st))
+                story.append(Paragraph("Strong areas (answered correctly): " + ", ".join("Q" + E(r["number"]) for r in right) + ".", st))
             if wrong:
                 story.append(Spacer(1, 3 * mm))
                 story.append(Paragraph("Wrong answers - what to review", styles["Heading3"]))
                 for r in wrong:
                     c = str(r.get("correctAnswer", "?"))
                     g = str(r.get("given", "-"))
-                    story.append(Paragraph("<b>Q" + str(r["number"]) + "</b>: you answered <b>" + g + "</b>, the correct answer is <b>" + c + "</b>.", st))
+                    story.append(Paragraph("<b>Q" + E(r["number"]) + "</b>: you answered <b>" + E(g) + "</b>, the correct answer is <b>" + E(c) + "</b>.", st))
             if manual:
                 story.append(Spacer(1, 3 * mm))
-                story.append(Paragraph("Manual check needed: " + ", ".join("Q" + str(r["number"]) for r in manual) + ". These could not be auto-marked; compare with the answer key by hand.", st))
+                story.append(Paragraph("Manual check needed: " + ", ".join("Q" + E(r["number"]) for r in manual) + ". These could not be auto-marked; compare with the answer key by hand.", st))
             story.append(Spacer(1, 4 * mm))
 
             data = [["#", "Your answer", "Correct", "Verdict"]]
@@ -424,7 +538,7 @@ class Handler(BaseHTTPRequestHandler):
             if payload.get("notes"):
                 story.append(Spacer(1, 4 * mm))
                 story.append(Paragraph("Notes", styles["Heading3"]))
-                story.append(Paragraph(payload["notes"], st))
+                story.append(Paragraph(E(payload["notes"]), st))
             doc.build(story)
             self._send(200, buf.getvalue(), "application/pdf")
         except ImportError as e:

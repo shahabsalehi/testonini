@@ -5,13 +5,13 @@
 #   Windows: ./build.bat  (or bash build.sh under Git Bash / WSL)
 set -e
 cd "$(dirname "$0")"
-pip install --user --break-system-packages pyinstaller reportlab firecrawl-anydoc pymupdf 2>/dev/null || \
-  pip install --user pyinstaller reportlab firecrawl-anydoc pymupdf
+pip install --user --break-system-packages pyinstaller reportlab firecrawl-anydoc pymupdf pystray pillow 2>/dev/null || \
+  pip install --user pyinstaller reportlab firecrawl-anydoc pymupdf pystray pillow
 pyinstaller --onefile --noconsole --name TestPractice \
-  --add-data 'index.html:.' --add-data 'style.css:.' --add-data 'app.js:.' --add-data 'pdf.js:.' \
+  --add-data 'index.html:.' --add-data 'style.css:.' --add-data 'app.js:.' --add-data 'pdf.js:.' --add-data 'vendor/pdfjs:vendor/pdfjs' \
   --hidden-import launch_reportlab_marker --hidden-import anydoc \
   --exclude-module cryptography --exclude-module botocore --exclude-module boto3 \
-  --exclude-module numpy --exclude-module pandas --exclude-module fitz \
+  --exclude-module numpy --exclude-module pandas \
   --exclude-module torch --exclude-module tkinter \
   launch.py
 echo "Built: dist/"
