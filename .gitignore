@@ -1,11 +1,21 @@
+# build output
 build/
 dist/
 __pycache__/
+*.spec
+release/deepsec-*.json
+
+# packaging / zips
 *.zip
+
+# user content and large binaries
 *.pdf
 pdfs/
 tests/*.json
 !tests/sample.json
-release/deepsec-report.json
-release/deepsec-*.json
-TestPractice-*.zip
+
+# OS noise
+.DS_Store
+Thumbs.db
+*.part
+release/

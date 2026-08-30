@@ -1,5 +1,9 @@
 # TestPractice — local exam simulator
 
+![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)
+![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-lightgrey.svg)
+![No build step](https://img.shields.io/badge/build%20step-none-success.svg)
+
 Drop an exam PDF in. Get a timed, real-feeling computer test: split-screen with the
 source document, question palette, flagging, auto-marking, and a downloadable
 results PDF. Runs 100% on your machine — no account, no server, no cloud.
@@ -76,5 +80,6 @@ no telemetry, no accounts, fully offline (PDF.js is vendored — zero outbound c
 
 ## License
 
-MIT. Third-party: PDF.js (Apache-2.0), firecrawl-anydoc (MIT), reportlab (BSD),
-PyInstaller (GPL boot-loader exception applies to the bundled output).
+[Apache-2.0](LICENSE). Third-party: PDF.js (Apache-2.0), firecrawl-anydoc (MIT),
+reportlab (BSD), PyInstaller (GPL with the bootloader exception covering the
+bundled output), pystray (LGPL-3.0, dynamically linked), Pillow (MIT-CMU), Tesseract (Apache-2.0).
