@@ -332,14 +332,24 @@ class Handler(BaseHTTPRequestHandler):
                                                     self.log_date_time_string(),
                                                     fmt % args))
 
+    # Trusted Host values: this server has exactly one address (loopback :5874).
+    # Validating Host — instead of echoing it into the allowlist — blocks DNS
+    # rebinding (an attacker domain resolving to 127.0.0.1 would otherwise make
+    # its own Origin "match" via the Host header it also controls).
+    TRUSTED_HOSTS = {f"localhost:{PORT}", f"127.0.0.1:{PORT}", f"[::1]:{PORT}"}
+
+    def _trusted_host(self):
+        """True unless the Host header names anything other than this loopback server."""
+        return (self.headers.get("Host") or "") in self.TRUSTED_HOSTS
+
     def _browser_origin(self):
-        """True unless a browser Origin header names a foreign site (CSRF gate)."""
+        """True unless a browser Origin header names a foreign site (CSRF gate).
+        Applies to all requests (GET included): foreign pages must not read or
+        write anything here."""
         origin = self.headers.get('Origin') or ''
         if origin == '':
             return True  # non-browser client (curl, MCP SDK)
-        ok_origins = {f'http://localhost:{PORT}', f'http://127.0.0.1:{PORT}',
-                      f'https://localhost:{PORT}', f'https://127.0.0.1:{PORT}',
-                      f'http://{self.headers.get("Host", "localhost:5874")}'}
+        ok_origins = {f'http://localhost:{PORT}', f'http://127.0.0.1:{PORT}'}
         return origin in ok_origins
 
     def _read_body(self, limit=MAX_BODY):
@@ -362,6 +372,14 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
     def do_GET(self):
+        # DNS-rebinding gate: a foreign page whose domain resolves to loopback
+        # still sends its real name in Host; reject it before touching the FS.
+        if not self._trusted_host():
+            self._send(403, b"untrusted Host header", "text/plain")
+            return
+        if not self._browser_origin():
+            self._send(403, b"cross-origin requests not allowed", "text/plain")
+            return
         parsed = urllib.parse.urlparse(self.path)
         if parsed.path == "/mcp":
             # streamable HTTP: GET may open SSE or be rejected; answer with liveness
@@ -399,6 +417,10 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         path = urllib.parse.urlparse(self.path).path
+        # DNS-rebinding gate (same as GET): Host must name this loopback server.
+        if not self._trusted_host():
+            self._send(403, b"untrusted Host header", "text/plain")
+            return
         # CSRF gate: a browser page from a foreign origin cannot silently mutate state.
         if not self._browser_origin():
             self._send(403, b"cross-origin requests not allowed", "text/plain")
@@ -484,10 +506,12 @@ class Handler(BaseHTTPRequestHandler):
         if not re.fullmatch(r"[A-Za-z0-9_ .()-]+\.(pdf|docx|doc|rtf|odt|epub|csv|xlsx)", fname, re.I):
             self._send(400, b"unsupported file name/type", "text/plain")
             return
-        for reserved in ("CON", "PRN", "AUX", "NUL", "COM1", "LPT1"):
-            if fname.upper().startswith(reserved):
-                self._send(400, b"reserved file name", "text/plain")
-                return
+        # Windows reserved device names: match the exact stem only (contacts.pdf is
+        # a legal file; CON.pdf is not). COM/LPT go up to 9 on modern Windows.
+        stem = re.sub(r"\.[^.]*$", "", fname).upper()
+        if stem in {"CON", "PRN", "AUX", "NUL"} or re.fullmatch(r"(COM|LPT)[1-9]", stem):
+            self._send(400, b"reserved file name", "text/plain")
+            return
         os.makedirs(PDFS, exist_ok=True)
         dest = os.path.join(PDFS, fname)
         # atomic write: temp file in the same dir then replace (never truncates an existing file)
@@ -511,9 +535,14 @@ class Handler(BaseHTTPRequestHandler):
         def E(s):  # reportlab Paragraph expects XML-ish markup: escape every untrusted fragment
             return _xesc(str(s))
 
+        # same size guard as every other body-consuming route (unbounded read
+        # of a local POST would let a loopback peer OOM the process)
+        raw = self._read_body(limit=10 * 1024 * 1024)
+        if raw is None:
+            self._send(400, b"missing or oversized body", "text/plain")
+            return
         try:
-            length = int(self.headers.get("Content-Length", 0))
-            payload = json.loads(self.rfile.read(length) or b"{}")
+            payload = json.loads(raw or b"{}")
         except Exception as e:
             self._send(400, str(e).encode(), "text/plain")
             return
