@@ -334,6 +334,7 @@ function startExam(resetRender) {
   $('#exam-title').textContent = test.title;
   const hasPdf = !!test.sourcePdf;
   $('#pane-pdf').style.display = hasPdf ? '' : 'none';
+
   $('#pane-questions').style.width = hasPdf ? '' : '100%';
   if (hasPdf) {
     // sourcePdf is a bare filename inside user pdfs/; normalize any legacy/foreign value
@@ -347,12 +348,19 @@ function startExam(resetRender) {
 
 function startTimer() {
   clearInterval(timerHandle);
-  const limit = Math.max(30, Number(test.timeLimitSeconds) || 3600) * 1000;
+  const chip = $('#timer');
+  if (test.timeLimitSeconds == null) {          // untimed free practice: no countdown, ever
+    chip.textContent = '∞ Untimed';
+    chip.classList.remove('low');
+    chip.classList.add('untimed');
+    return;
+  }
+  chip.classList.remove('untimed');
+  const limit = Math.max(30, Number(test.timeLimitSeconds)) * 1000;
   updateTimer();
   timerHandle = setInterval(updateTimer, 1000);
   function updateTimer() {
     const remain = limit - (Date.now() - attempt.startedAt);
-    const chip = $('#timer');
     if (remain <= 0) {
       chip.textContent = '0:00';
       chip.classList.add('low');
