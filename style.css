@@ -103,6 +103,7 @@ button, input, textarea, select { font: inherit; }
 }
 
 .timer-chip.low { background: var(--color-incorrect); }
+.timer-chip.untimed { background: var(--gray-500); font-size: var(--text-base); }
 
 .exam-body { flex: 1; min-height: 0; display: flex; }
 
