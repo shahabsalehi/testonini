@@ -87,7 +87,7 @@ def _wait_and_open_browser(timeout=30.0):
         for host in ("127.0.0.1", "::1"):  # numeric — no DNS involved, both stacks covered
             try:
                 s = socket.create_connection((host, server.PORT), timeout=3)
-                s.sendall(b"GET /healthz HTTP/1.0\r\nHost: localhost\r\n\r\n")
+                s.sendall(f"GET /healthz HTTP/1.0\r\nHost: localhost:{server.PORT}\r\n\r\n".encode())
                 data = s.recv(64)
                 s.close()
                 if b"200" in data:
