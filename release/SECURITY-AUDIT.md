@@ -1,7 +1,7 @@
 # Security & Verification Notes
 
 This file documents the security model, what the automated verification covers,
-and known limitations. Last updated for release v0.1.5.
+and known limitations. Last updated for release v0.1.8.
 
 ## Security model
 
@@ -21,8 +21,13 @@ and known limitations. Last updated for release v0.1.5.
 - Path validation on every file route: strict filename patterns, rejection of
   traversal sequences, `realpath` containment inside the two data folders.
 - Atomic file writes (`temp` + `fsync` + `replace`) for test persistence and uploads.
-- Request guards: body-size limits, cross-origin rejection, malformed JSON-RPC
-  handled without crashing.
+- DNS-rebinding protection: the Host header must be `localhost:5874`,
+  `127.0.0.1:5874`, or `[::1]:5874` on every route (GET and POST) — a foreign
+  domain resolving to loopback is rejected before any file or handler runs.
+- Origin (CSRF) rejection applies to all requests, not only POSTs: a foreign
+  page cannot read `tests/` or `pdfs/` either.
+- Request guards: body-size limits (100 MB upload, 10 MB MCP/export bodies),
+  cross-origin rejection, malformed JSON-RPC handled without crashing.
 - ReportLab export: user-supplied strings XML-escaped before rendering.
 
 ## Verification
