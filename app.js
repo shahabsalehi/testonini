@@ -524,7 +524,9 @@ $('#btn-submit').addEventListener('click', submitExam);
 
 /* ---------- Scoring ---------- */
 function norm(s) { return String(s).trim().toLowerCase().replace(/\s+/g, ' '); }
-const pt = q => (typeof q.points === 'number' && q.points > 0) ? q.points : 0;
+// explicit points honored (0 = unmarked/self-marked); absent points default to 1 so
+// AI-authored tests without a points field still produce a meaningful score
+const pt = q => (typeof q.points === 'number' && q.points >= 0) ? q.points : 1;
 
 function scoreQuestion(q) {
   if (q.type === 'long_text') return { correct: null, given: attempt.answers[q.id] || '' };
