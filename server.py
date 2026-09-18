@@ -290,7 +290,7 @@ def handle_mcp(msg):
         return mcp_response(id_, {
             "protocolVersion": msg.get("params", {}).get("protocolVersion", "2025-03-26"),
             "capabilities": {"tools": {}},
-            "serverInfo": {"name": "testonini", "version": "1.0"},
+            "serverInfo": {"name": "testonini", "version": "0.1.8"},
         })
     if method == "notifications/initialized":
         return None
