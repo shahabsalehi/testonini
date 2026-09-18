@@ -16,10 +16,7 @@ jobs:
           - os: windows-latest
             artifact: TestPractice-windows-x64
             pip_flags: ""
-          - os: macos-13        # last Intel runner; fine for Intel + can build universal2 if SDK allows
-            artifact: TestPractice-macos-x64
-            pip_flags: ""
-          - os: macos-14        # Apple Silicon; a universal2 build here covers Intel+M1+
+          - os: macos-14        # Apple Silicon; README points Intel users to local builds
             artifact: TestPractice-macos-arm64
             pip_flags: ""
     runs-on: ${{ matrix.os }}
