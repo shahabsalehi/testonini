@@ -169,7 +169,7 @@ def tool_prepare_test_from_pdf(args):
              "acceptedAnswers?:[...], matchOptions?:[{id,text}], prompts?:[{id,text,correctAnswer?}], "
              "minWords?, maxWords?, points}]}. "
              "Allowed types: single_choice, multiple_choice, true_false, text_input, matching, long_text. "
-             "NOTE: true_false in the target exam is True/False/Not Given — use options T/F/N. "
+             "NOTE: for True/False/Not-Given style items use type true_false with options T/F/N. "
              "If the PDF contains no answer key, OMIT every correctAnswer/acceptedAnswers field. "
              "Call save_test with file='" + re.sub(r"\.pdf$", ".json", name) + "')"),
            "textByPage": {}}
